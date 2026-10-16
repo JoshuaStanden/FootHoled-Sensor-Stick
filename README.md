@@ -1,16 +1,22 @@
-# FootHoled Sensor Stick
+# FootHoled Sensor Stick — XIAO build
 
-A battery-powered, 3D-printed **RF sensor node** built from two ESP32 boards. It
-passively observes nearby **Wi-Fi** and **Bluetooth (BLE)** devices, logs them to
-a **microSD card** (with on-board flash as an automatic fallback), and hands the
-log off to a separate **collector node** over **LoRa** (long range) or **BLE**
-(close range) — whichever the collector chooses. One 18650 cell powers the whole
-thing.
+A battery-powered, 3D-printed **RF sensor node** built from two Seeed XIAO ESP32
+boards. It passively observes nearby **Wi-Fi** (2.4 GHz **and** 5 GHz) and
+**Bluetooth (BLE)** devices, logs them to a **microSD card** (with the C5's
+on-board flash as an automatic fallback), and hands the log off to a separate
+**collector node** over **LoRa** (long range) or **BLE** (close range) —
+whichever the collector chooses. One 18650 cell powers the whole thing.
+
+> **This is the `xiao` branch.** It replaces the Heltec workhorse from `main`
+> with a XIAO ESP32-C5 + a stacked Wio-SX1262 LoRa hat. Design rationale, verified
+> wiring, BOM and firmware notes live in [`docs/xiao/`](docs/xiao/). The firmware
+> here is a **first bringup draft — not yet compiled or flashed on hardware.**
 
 > **Scope note:** this repo is the **sensor** (the thing that listens). The
 > **collector** (the thing that comes to pick up the logs) is a separate device
 > and is **not written yet** — the [handoff contract](#handoff-to-the-collector)
-> below is the spec it will implement.
+> below is the spec it will implement. The handoff contract, LoRa parameters and
+> BLE UUIDs are kept identical to the Heltec build so a collector works with either.
 
 ---
 
@@ -25,7 +31,7 @@ thing.
 - [Storage: SD-primary with flash fallback](#storage-sd-primary-with-flash-fallback)
 - [Log format](#log-format)
 - [Handoff to the collector](#handoff-to-the-collector)
-- [On-screen status](#on-screen-status)
+- [Status output](#status-output)
 - [Power & runtime](#power--runtime)
 - [3D-printed case notes](#3d-printed-case-notes)
 - [What's not built yet](#whats-not-built-yet)
@@ -37,21 +43,22 @@ thing.
 ## How it works
 
 ```
-   2.4 GHz Wi-Fi  ─┐                                   ┌─ LoRa  (far, slow)
-   frames          │   ┌─────────────────────────┐    │
-                   ├──▶│  Heltec V4  "workhorse"  │────┤  handoff to COLLECTOR
-   BLE ads ──▶ XIAO │   │  Wi-Fi sniff + logging  │    │   (collector picks
-         (UART)─────┘   └─────────────────────────┘    └─ BLE   (near, fast)   which)
+   Wi-Fi frames    ─┐                                   ┌─ LoRa  (far, slow)
+   (2.4 + 5 GHz)    │   ┌─────────────────────────┐    │
+                    ├──▶│  XIAO C5  "workhorse"    │────┤  handoff to COLLECTOR
+   BLE ads ──▶ XIAO │   │  Wi-Fi sniff + logging   │    │   (collector picks
+         (UART) C3 ─┘   └─────────────────────────┘    └─ BLE   (near, fast)  which)
                               │
-                         microSD  (flash fallback)
+                         microSD  (onboard flash fallback)
 ```
 
 1. The **XIAO ESP32-C3** scans BLE advertisements and streams each one to the
-   Heltec over a one-wire **UART** link.
-2. The **Heltec V4** sniffs Wi-Fi in promiscuous mode, ingests the XIAO's BLE
-   lines, and writes everything to one merged log in **batches**.
-3. When a collector shows up, the Heltec hands over the log — **CRC-verified** —
-   and only deletes it once the collector confirms a matching checksum.
+   C5 over a one-wire **UART** link.
+2. The **XIAO ESP32-C5** sniffs Wi-Fi in promiscuous mode across **2.4 GHz and
+   5 GHz**, ingests the C3's BLE lines, and writes everything to one merged log
+   in **batches**.
+3. When a collector shows up, the C5 hands over the log — **CRC-verified** — and
+   only deletes it once the collector confirms a matching checksum.
 
 ## Why two boards
 
@@ -61,124 +68,145 @@ across two chips is the entire reason for the dual-board design:
 
 | Board | Chip | Jobs |
 |-------|------|------|
-| **Heltec WiFi LoRa 32 V4** | ESP32-S3 + SX1262 | Wi-Fi sniffer · UART ingest from XIAO · batched log (microSD primary, flash fallback) · CRC-verified handoff over LoRa **or** BLE · OLED · 18650 voltage monitor |
-| **Seeed XIAO ESP32-C3** | ESP32-C3 | BLE scanner → MAC, address type, RSSI, name, advertised service UUIDs, service data, manufacturer data; streams to the Heltec over UART |
+| **Seeed XIAO ESP32-C5** | ESP32-C5 (RISC-V, dual-band Wi-Fi 6) + Wio-SX1262 hat | Wi-Fi sniffer (2.4 **+** 5 GHz) · UART ingest from the C3 · batched log (microSD primary, onboard flash fallback) · CRC-verified handoff over LoRa **or** BLE · 18650 powered |
+| **Seeed XIAO ESP32-C3** | ESP32-C3 | BLE scanner → MAC, address type, RSSI, name, advertised service UUIDs, service data, manufacturer data; streams to the C5 over UART |
 
-The Heltec is the **workhorse** and keeps the single merged log; the XIAO does
-nothing but Bluetooth.
+The C5 is the **workhorse** and keeps the single merged log; the C3 does nothing
+but Bluetooth. The 5 GHz capability is the main upgrade over the Heltec build —
+the C5 is the first XIAO with a 5 GHz radio, closing the blind spot where modern
+devices connect on 5 GHz and are invisible to a 2.4 GHz-only sniffer.
 
 ## Bill of materials
 
+Full parts list with prices and alternatives: [`docs/xiao/BOM.md`](docs/xiao/BOM.md).
+The essentials:
+
 | Qty | Part | Notes |
 |-----|------|-------|
-| 1 | **Heltec WiFi LoRa 32 V4** (or Wireless Stick Lite V3) | ESP32-S3 + SX1262. Stick Lite is cheaper and has no OLED. |
+| 1 | **Seeed XIAO ESP32-C5** | the Wi-Fi/SD/LoRa workhorse (dual-band) |
 | 1 | **Seeed XIAO ESP32-C3** | the BLE scanner |
-| 1 | **microSD breakout + card** | wired to a 2nd SPI bus; card ≤ "normal" sizes, FAT32 |
+| 1 | **Wio-SX1262 for XIAO** | plug-and-play LoRa hat (SX1262, 868/915 MHz), stacks on the C5 |
+| 1 | **microSD breakout + card** | SPI, **3.3 V**, shares the C5 SPI bus with LoRa; card ≤ 32 GB, FAT32 |
 | 1 | **~10 µF capacitor** | across the SD module's VCC/GND, close to the socket (prevents brown-out on write bursts) |
-| 1 | **18650 cell** | use a **protected** cell or add a protection board |
-| 1 | 18650 holder + JST lead | connects to the Heltec's on-board charger/battery port |
-| — | hookup wire, 3D-printed case | antennas near the case wall, non-conductive filament |
+| 1 | **dual-band 2.4/5 GHz U.FL antenna** | the C5's stock antenna is 2.4 GHz-only; **required** to get 5 GHz range |
+| 1 | **protected 18650 cell** | protected cell (or add a protection board) for an unattended device |
+| 1 | 18650 holder | connects to the C5's battery input |
+| — | hookup wire, power switch, 3D-printed case | antennas near the case wall, non-conductive filament |
+
+> **SD breakout caveat (important on this build):** the SD card shares the C5's
+> single SPI bus with the LoRa radio. A cheap module with aggressive pull-ups on
+> SCK/MISO/MOSI can fight the radio on the shared bus. Use a buffered breakout
+> (Adafruit #4682) **or** remove the bus pull-ups on a cheap module. See
+> [`docs/xiao/WIRING.md`](docs/xiao/WIRING.md).
 
 ## Quick start
 
 1. **Install the ESP32 core** in Arduino IDE — Boards Manager → *"esp32 by
-   Espressif"* **and** *"Heltec ESP32 Series Dev-boards"* by Heltec Automation.
+   Espressif"*. Use a **recent** version: the C5 is new, and 5 GHz promiscuous
+   channel-set support depends on the ESP-IDF the core bundles.
 2. **Install libraries** (Library Manager):
    - Both boards: **NimBLE-Arduino v2.x** — *the v2.x callback API is required;
      v1.x will not compile.*
-   - Heltec only: `RadioLib`, and `U8g2` **only** for the OLED (V4) variant.
+   - C5 only: `RadioLib` (SX1262 driver).
    - `SD`, `SPI`, `LittleFS` ship with the esp32 core — no separate install.
-3. **Pick the Heltec board variant** — at the top of `heltec_workhorse.ino`,
-   uncomment **exactly one** `#define` (the sketch will not compile until you do,
-   on purpose, so you can't flash the wrong one):
-   - `BOARD_WIFI_LORA_32_V4` — has the OLED; status shows on screen.
-   - `BOARD_WIRELESS_STICK_LITE` — no OLED; status prints to serial.
-4. **Set your LoRa region** — edit `LORA_FREQ` (US `915.0`, EU `868.0`, Asia
-   `433.0`). See [Configure before flashing](#configure-before-flashing).
-5. **Flash the Heltec** — select board *"Heltec WiFi LoRa 32(V3)"* in the IDE
-   (the V4 and Stick Lite V3 are pin/radio compatible with the V3 definition),
-   then flash `heltec-workhorse/heltec_workhorse.ino`.
-6. **Flash the XIAO** — select board *"XIAO_ESP32C3"*, then flash
-   `xiao-bt/xiao_bt_scanner.ino`.
-7. **Wire the two boards + SD + battery** per [Wiring](#wiring), power on, and
-   confirm the OLED shows `Log(SD)` (or `Log(FL)` on flash fallback).
+3. **Set your LoRa region** — edit `LORA_FREQ` in the C5 sketch (US `915.0`, EU
+   `868.0`, Asia `433.0`). See [Configure before flashing](#configure-before-flashing).
+4. **Flash the C5** — select board *"XIAO_ESP32C5"*, then flash
+   `xiao-c5-workhorse/xiao_c5_workhorse.ino`.
+5. **Flash the C3** — select board *"XIAO_ESP32C3"*, then flash
+   `xiao-c3-ble/xiao_c3_ble_scanner.ino`.
+6. **Wire the two boards + SD + battery** per [Wiring](#wiring), power on, and
+   confirm the serial `[STATUS]` line shows `Log(SD)` (or `Log(FL)` on fallback)
+   and a climbing `WiFi:` count.
 
 ## Wiring
 
-### UART link (XIAO → Heltec)
+Verified GPIO numbers for both boards are in
+[`docs/xiao/WIRING.md`](docs/xiao/WIRING.md). Summary:
 
-| XIAO ESP32-C3 | Heltec V4 | Purpose |
-|---------------|-----------|---------|
-| TX = GPIO21 (D6) | RX = GPIO45 | BLE data up to the workhorse |
-| RX = GPIO20 (D7) | TX = GPIO46 | optional (future commands) |
+### UART link (C3 → C5)
+
+| XIAO C3 | XIAO C5 | Purpose |
+|---------|---------|---------|
+| TX = D6 / GPIO21 | RX = D7 / GPIO12 | BLE data up to the workhorse |
+| RX = D7 / GPIO20 | TX = D6 / GPIO11 | optional (future commands) |
 | GND | GND | **required common ground** |
-| 3V3 (from Heltec `Ve` rail) | `Ve` (GPIO36-gated) | power the XIAO |
 
-> You can power the XIAO from the Heltec's switched **Ve** 3.3 V rail (max
-> 500 mA — plenty for the C3). That keeps one battery and one power switch for
-> the whole node.
+> **TX↔RX crosses over.** Power the C3 from its own cell or share the C5's 3.3 V
+> rail — either works, as long as the grounds are tied together.
 
-### microSD module (EXTERNAL — add this)
+### Wio-SX1262 LoRa hat (plug-and-play on the C5)
 
-Wire a microSD breakout to a **second SPI bus**. The Heltec's main SPI bus is
-taken by the on-board LoRa radio (pins 8–14), so the card must **not** share it:
+The hat stacks directly onto the C5 headers — you do **not** hand-wire it. It
+consumes these C5 pins (documented so you know what's left for the SD card):
 
-| microSD module | Heltec V4 | Notes |
-|----------------|-----------|-------|
-| SCK | GPIO4 | second SPI clock |
-| MISO | GPIO5 | |
-| MOSI | GPIO6 | |
-| CS | GPIO7 | chip select |
-| VCC | 3V3 (or the `Ve` rail) | most modules accept 3.3 V directly |
+| Hat signal | C5 pin | | Hat signal | C5 pin |
+|---|---|---|---|---|
+| NSS (CS) | D4 / GPIO23 | | BUSY | D3 / GPIO7 |
+| DIO1 | D1 / GPIO0 | | RF_SW | D5 / GPIO24 |
+| NRST | D2 / GPIO25 | | SPI bus | D8/D9/D10 (GPIO8/9/10) |
+
+### microSD module (hand-wired, SHARES the C5 SPI bus with LoRa)
+
+The C5 has **one** SPI bus, so the SD card joins the LoRa radio's bus with its
+**own chip-select**. Only the CS is unique; the three bus lines are shared:
+
+| microSD module | C5 pin | Notes |
+|----------------|--------|-------|
+| SCK | D8 / GPIO8 | **shared** with LoRa |
+| MISO | D9 / GPIO9 | **shared** with LoRa |
+| MOSI | D10 / GPIO10 | **shared** with LoRa |
+| CS | D0 / GPIO1 | SD's own (verified safe, non-strapping) |
+| VCC | 3V3 | **3.3 V only** |
 | GND | GND | |
 
-> **Add a ~10 µF cap** across the module's VCC/GND close to the socket. SD write
-> bursts can pull 100 mA+ and brown out a battery node without local decoupling
-> — it's the single most common cause of random SD failures. If the card won't
-> mount, the firmware falls back to internal flash and shows `Log(FL)` instead
-> of `Log(SD)`.
-
-### On-board, already wired on the Heltec V4 (no action needed)
-
-- **SX1262 LoRa:** NSS=8 SCK=9 MOSI=10 MISO=11 RST=12 BUSY=13 DIO1=14
-- **OLED SSD1306:** SDA=17 SCL=18 RST=21 (rail gated by Vext_Ctrl=GPIO36)
-- **Battery ADC:** GPIO1, enabled by ADC_Ctrl=GPIO37
+> **Add a ~10 µF cap** across the module's VCC/GND close to the socket — SD write
+> bursts can brown out a battery node. And **disable the module's bus pull-ups**
+> (or use a buffered breakout) so the SD doesn't fight the LoRa radio on the
+> shared bus. If the card won't mount, the firmware falls back to the C5's
+> onboard flash and the status shows `Log(FL)` instead of `Log(SD)`.
 
 ### 18650 power
 
-- Connect the 18650 holder to the Heltec's dedicated **LiPo/battery connector**
-  (JST, on the back). The V4 has an on-board charger + 3.3 V regulator, so
-  charging over USB-C and running from the cell both work.
-- **Use a protected 18650 or add a protection board.** A raw holder gives you an
-  *unprotected* cell; the Heltec's charger does basic management but a protected
-  cell guards against over-discharge in a sealed case.
+- Connect the 18650 to the C5's battery input (both XIAOs have onboard LiPo
+  charge management, so USB-C charging and running from the cell both work).
+- **Use a protected 18650 or add a protection board** — a raw cell in a sealed,
+  unattended logger risks over-discharge.
+- To run both XIAOs from one cell, feed the cell to both boards' battery inputs
+  with a **common ground**, or share a 3.3 V rail. Decide the scheme before wiring.
 
 ## Configure before flashing
 
-In `heltec-workhorse/heltec_workhorse.ino`:
+In `xiao-c5-workhorse/xiao_c5_workhorse.ino`:
 
 | Setting | What to set | Why |
 |---------|-------------|-----|
 | `LORA_FREQ` | your legal ISM band: US `915.0`, EU `868.0`, Asia `433.0` | the collector must match this exactly |
+| `ENABLE_5GHZ` | `1` (default) to hop 5 GHz channels too; `0` to force 2.4 GHz-only | set `0` if your esp32 core is too old to set a 5 GHz channel in promiscuous mode |
 | `LORA_SF` / `LORA_BW` / `LORA_CR` / `LORA_SYNC` | leave as-is unless you change the collector too | both ends must match |
 | `NODE_ID` | a unique string per sensor if you build several | identifies the node in the log/handoff |
 
-The XIAO (`xiao-bt/xiao_bt_scanner.ino`) needs no edits for a default build;
+The C3 (`xiao-c3-ble/xiao_c3_ble_scanner.ino`) needs no edits for a default build;
 `REPORT_RSSI_FLOOR` and `SCAN_DURATION_S` are tunable if you want to filter weak
 hits or change the scan cadence.
 
 ## Storage: SD-primary with flash fallback
 
-On boot the workhorse tries the microSD first. If a card mounts, all logging goes
-to it (`/sensor.log`, OLED shows `Log(SD)`). If no card is present or it fails,
-logging falls back to on-board flash (LittleFS, OLED shows `Log(FL)`) — so logging
-never silently stops. File name, format, and the upload path are identical either
-way.
+On boot the C5 tries the microSD first (on the shared SPI bus). If a card mounts,
+all logging goes to it (`/sensor.log`, status shows `Log(SD)`). If no card is
+present or it fails, logging falls back to the C5's onboard flash (LittleFS,
+status shows `Log(FL)`) — so logging never silently stops. File name, format, and
+the upload path are identical either way.
 
 | Backend | Size cap | Role |
 |---------|----------|------|
 | microSD | 256 MB sanity cap | primary — effectively unlimited (days–weeks between pickups) |
-| internal flash | 0.5 MB | safety net — oldest log cleared if it fills before pickup |
+| C5 onboard flash | 0.5 MB | safety net — oldest log cleared if it fills before pickup |
+
+> **Alternative worth considering:** for a sealed logger that always offloads over
+> LoRa/BLE, logging straight to the C5's onboard flash (no SD card at all) removes
+> the shared-bus pull-up problem entirely. See the storage alternatives in
+> [`docs/xiao/BOM.md`](docs/xiao/BOM.md).
 
 **Batched, crash-resilient writes.** Observations are buffered and written in
 batches (flushed at ~1 KB **or** every 250 ms), not one file write per packet —
@@ -190,8 +218,7 @@ magic marker tells a genuine buffer from uninitialised RTC garbage.
 > **What's still at risk:** a *true power cut* (battery dies/disconnects)
 > collapses the rail, and RTC RAM needs the rail to retain data — so you lose at
 > most the current unflushed buffer (~250 ms of the newest observations). Crashes,
-> watchdog resets and reboots are fully covered. Closing the power-cut gap would
-> need a hardware brownout detector doing a last-gasp flush — not included.
+> watchdog resets and reboots are fully covered.
 
 ## Log format
 
@@ -257,43 +284,54 @@ timeout leaves the log intact for the next attempt.
   - data (NOTIFY) `6b1a0002-…` · ctrl (WRITE) `6b1a0003-…`
 
 > The CRC32 uses the standard convention (seed `0xFFFFFFFF`, reflected, final
-> XOR), so any off-the-shelf CRC32 on the collector will match.
+> XOR), so any off-the-shelf CRC32 on the collector will match. These values are
+> **identical to the Heltec build**, so an existing collector interoperates.
 
-## On-screen status
+## Status output
 
-On the V4 the OLED shows live status (the Stick Lite prints the same to serial):
+Neither XIAO has an OLED, so the C5 prints live status to the **serial console**
+(115200 baud) once per second:
 
-| Display | Meaning |
-|---------|---------|
+```
+[STATUS] WiFi:<n> drop:<n> BT:<n> Log(SD|FL):<n>B ch:<n> <state>
+```
+
+| Field | Meaning |
+|-------|---------|
 | `WiFi:<n> drop:<n>` | Wi-Fi observations seen / dropped to a full queue (normally 0; may tick up during a LoRa upload). If `drop` climbs, raise `WIFI_QUEUE_DEPTH`. |
-| `BT seen:<n>` | BLE observations received from the XIAO |
-| `Log(SD):<n>B` / `Log(FL):<n>B` | current log size and which backend is active (SD or flash) |
-| `Batt:<v>V <state>` | 18650 voltage and link state: `listen` / `BLE~` / `LoRa` / `BLE` |
+| `BT:<n>` | BLE observations received from the C3 |
+| `Log(SD):<n>B` / `Log(FL):<n>B` | current log size and which backend is active (SD or onboard flash) |
+| `ch:<n>` | current sniff channel; a `5G-` prefix means it's dwelling on a 5 GHz channel |
+| `<state>` | link state: `listen` / `BLE~` / `LoRa` / `BLE` |
+
+> Want on-device status without a screen? Add a tiny I²C OLED on the C5's free
+> I²C pins (listed as optional in [`docs/xiao/BOM.md`](docs/xiao/BOM.md)).
 
 ## Power & runtime
 
-- Active Wi-Fi sniffing + BLE scanning ≈ **150–300 mA** combined.
-- A 3000 mAh 18650 → roughly **10–18 h** continuous.
-- To extend: raise `WIFI_CHANNEL_DWELL_MS`, lengthen the XIAO scan gap, dim/kill
-  the OLED, or add deep-sleep duty cycling (scan N s, sleep M). Ask and I can add
-  a duty-cycle mode.
+- Active Wi-Fi sniffing + BLE scanning ≈ **120–250 mA** combined across both XIAOs.
+- A 3000 mAh 18650 → roughly **12–20 h** continuous.
+- To extend: raise `WIFI_CHANNEL_DWELL_MS`, lengthen the C3 scan gap, or add
+  deep-sleep duty cycling (scan N s, sleep M). The XIAO C5/C3 both have a 15 µA
+  deep-sleep floor, so a duty-cycle mode extends runtime dramatically. Ask and I
+  can add one.
 
 ## 3D-printed case notes
 
-- **Keep antennas clear of ground planes.** The LoRa antenna and both 2.4 GHz
-  antennas (Heltec PCB + XIAO) should sit near the case wall, not buried behind
-  the battery. Don't use conductive filament.
+- **Keep antennas clear of ground planes.** The LoRa antenna and both 2.4/5 GHz
+  antennas (C5 + C3) should sit near the case wall, not buried behind the battery.
+  Don't use conductive filament. The C5 needs its **dual-band U.FL antenna** at
+  the case wall to get real 5 GHz range.
 - **Battery access:** design the 18650 holder for tool-free swap if you don't
-  want to rely only on USB-C charging. Add cutouts for the USB-C port and the
-  RST/PRG buttons so you can reflash without opening the case.
+  want to rely only on USB-C charging. Add cutouts for both XIAOs' USB-C ports and
+  reset buttons so you can reflash without opening the case.
 - **Heat:** two radios + a charger in a sealed box run warm. Add a couple of vent
-  slots on the top face (labyrinth style for weather resistance), or at minimum
-  leave an air gap around the regulator.
-- **OLED window:** cut a clear window, or omit it if you plan to disable the
-  display to save power.
-- **microSD access:** put the card slot near a case edge with a slot cutout so
-  you can pull the card without opening the enclosure. Keep the decoupling cap
-  right at the module.
+  slots on the top face (labyrinth style for weather resistance).
+- **microSD access:** put the card slot near a case edge with a slot cutout so you
+  can pull the card without opening the enclosure. Keep the decoupling cap right
+  at the module. (If you log to onboard flash instead, this is moot.)
+- **Stack height:** the Wio-SX1262 hat sits on top of the C5 — leave headroom for
+  the stacked boards plus the hand-soldered SD wires on the pass-through pads.
 
 ## What's not built yet
 
@@ -303,6 +341,18 @@ On the V4 the OLED shows live status (the Stick Lite prints the same to serial):
 - **A duty-cycle / deep-sleep power mode** (listed under
   [Power & runtime](#power--runtime)).
 - **Hardware brownout last-gasp flush** to close the true-power-cut data gap.
+
+## Bench / software open items (XIAO build)
+
+These are datasheet-confirmed in hardware but not yet proven on a built unit —
+see [`docs/xiao/ARCHITECTURE.md`](docs/xiao/ARCHITECTURE.md):
+
+- **5 GHz channel-set in promiscuous mode** — the C5 radio + MAC support it per
+  Espressif's datasheet; whether your ESP-IDF/core version exposes the 5 GHz
+  channel set is a software-maturity check. `ENABLE_5GHZ 0` falls back to 2.4 GHz.
+- **Mechanical pad access** — confirm the SD solder pads (D0 + the SPI bus) are
+  reachable once the Wio-SX1262 hat is seated.
+- **Firmware is a first bringup draft** — not yet compiled or flashed.
 
 ## Legal / ethical note
 
@@ -317,14 +367,23 @@ them on the collector if you don't need the raw value.
 
 ```
 .
-├── README.md                              # this file
+├── README.md                              # this file (XIAO build)
 ├── LICENSE                                # MIT
 ├── .gitignore                             # build artifacts, IDE/OS files, ESP-IDF/PlatformIO output
-├── heltec-workhorse/
-│   └── heltec_workhorse.ino               # Heltec V4 workhorse firmware
-└── xiao-bt/
-    └── xiao_bt_scanner.ino                # XIAO ESP32-C3 BLE scanner firmware
+├── docs/
+│   └── xiao/                              # design docs for this build
+│       ├── README.md                      #   index
+│       ├── ARCHITECTURE.md                #   why C5 + C3, decisions, open items
+│       ├── WIRING.md                      #   verified pin map + GPIO numbers
+│       ├── BOM.md                         #   full parts list + alternatives
+│       └── FIRMWARE.md                    #   board targets, libraries, flashing
+├── xiao-c5-workhorse/
+│   └── xiao_c5_workhorse.ino              # XIAO ESP32-C5 workhorse (Wi-Fi/SD/LoRa/BLE)
+└── xiao-c3-ble/
+    └── xiao_c3_ble_scanner.ino            # XIAO ESP32-C3 BLE scanner
 ```
+
+> The Heltec workhorse firmware lives on the `main` branch, not here.
 
 ## License
 
