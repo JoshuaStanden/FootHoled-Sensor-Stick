@@ -9,6 +9,14 @@ are datasheet-grounded design references capturing the C5 + C3 line of thinking.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Why C5 + C3, board comparison, radio split, design decisions and open items |
 | [WIRING.md](WIRING.md) | Verified pin map and GPIO numbers for both boards, the SD + LoRa + UART wiring, firmware `#define`s |
 | [BOM.md](BOM.md) | Complete bill of materials, cost estimate, storage alternatives |
+| [FIRMWARE.md](FIRMWARE.md) | The two sketches, board targets, libraries, flashing and first-light checklist |
+
+## Firmware
+
+| Folder | Board | Role |
+|---|---|---|
+| [`xiao-c5-workhorse/`](../../xiao-c5-workhorse/) | XIAO ESP32-C5 | Wi-Fi sniff (2.4 + 5 GHz) + SD + LoRa + BLE handoff |
+| [`xiao-c3-ble/`](../../xiao-c3-ble/) | XIAO ESP32-C3 | BLE scanner → UART to the C5 |
 
 ## The build in one line
 
