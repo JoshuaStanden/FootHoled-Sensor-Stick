@@ -1,0 +1,35 @@
+# Build output
+/build/
+/build-*/
+*.o
+*.obj
+*.elf
+*.bin
+*.map
+*.hex
+
+# ESP-IDF
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE / editor
+.vscode/
+.idea/
+*.code-workspace
+.cache/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs / temp
+*.log
+*.tmp
