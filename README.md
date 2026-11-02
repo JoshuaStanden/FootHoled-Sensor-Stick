@@ -7,16 +7,14 @@ on-board flash as an automatic fallback), and hands the log off to a separate
 **collector node** over **LoRa** (long range) or **BLE** (close range) —
 whichever the collector chooses. One 18650 cell powers the whole thing.
 
-> **This is the `xiao` branch.** It replaces the Heltec workhorse from `main`
-> with a XIAO ESP32-C5 + a stacked Wio-SX1262 LoRa hat. Design rationale, verified
-> wiring, BOM and firmware notes live in [`docs/xiao/`](docs/xiao/). The firmware
-> here is a **first bringup draft — not yet compiled or flashed on hardware.**
+> The firmware here is a **first bringup draft — not yet compiled or flashed on
+> hardware.** Design rationale, verified wiring, BOM and firmware notes live in
+> [`docs/xiao/`](docs/xiao/).
 
 > **Scope note:** this repo is the **sensor** (the thing that listens). The
 > **collector** (the thing that comes to pick up the logs) is a separate device
 > and is **not written yet** — the [handoff contract](#handoff-to-the-collector)
-> below is the spec it will implement. The handoff contract, LoRa parameters and
-> BLE UUIDs are kept identical to the Heltec build so a collector works with either.
+> below is the spec it will implement.
 
 ---
 
@@ -72,7 +70,7 @@ across two chips is the entire reason for the dual-board design:
 | **Seeed XIAO ESP32-C3** | ESP32-C3 | BLE scanner → MAC, address type, RSSI, name, advertised service UUIDs, service data, manufacturer data; streams to the C5 over UART |
 
 The C5 is the **workhorse** and keeps the single merged log; the C3 does nothing
-but Bluetooth. The 5 GHz capability is the main upgrade over the Heltec build —
+but Bluetooth. The 5 GHz capability is the reason the C5 was chosen —
 the C5 is the first XIAO with a 5 GHz radio, closing the blind spot where modern
 devices connect on 5 GHz and are invisible to a 2.4 GHz-only sniffer.
 
@@ -285,7 +283,7 @@ timeout leaves the log intact for the next attempt.
 
 > The CRC32 uses the standard convention (seed `0xFFFFFFFF`, reflected, final
 > XOR), so any off-the-shelf CRC32 on the collector will match. These values are
-> **identical to the Heltec build**, so an existing collector interoperates.
+> **fixed**, so an existing collector interoperates.
 
 ## Status output
 
@@ -383,7 +381,7 @@ them on the collector if you don't need the raw value.
     └── xiao_c3_ble_scanner.ino            # XIAO ESP32-C3 BLE scanner
 ```
 
-> The Heltec workhorse firmware lives on the `main` branch, not here.
+> The pre-XIAO (Heltec workhorse) firmware lives on the `heltec-legacy` branch.
 
 ## License
 
